@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: #020617;
+}
+
+/* Monaco decorations for findings */
+.finding-range.finding-high { background: rgba(244, 63, 94, 0.07); }
+.finding-range.finding-medium { background: rgba(245, 158, 11, 0.07); }
+.finding-range.finding-low { background: rgba(56, 189, 248, 0.06); }
+.finding-gutter { margin-left: 2px; width: 3px !important; }
+.finding-gutter-high { background: #f43f5e; }
+.finding-gutter-medium { background: #f59e0b; }
+.finding-gutter-low { background: #38bdf8; }
+.finding-evidence { background: rgba(244, 63, 94, 0.22); }

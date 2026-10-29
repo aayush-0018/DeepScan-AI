@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+node_modules/
+frontend/dist/
+artifacts/model/*
+!artifacts/model/.gitkeep
+ml/data/processed/*.jsonl
+ml/runs/
+ml/reports/
+.DS_Store
+*.tsbuildinfo

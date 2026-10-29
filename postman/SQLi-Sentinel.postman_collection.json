@@ -1,0 +1,475 @@
+{
+  "info": {
+    "name": "SQLi Sentinel API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Contract tests for the SQLi Sentinel FastAPI service. Run from the repo root so file uploads resolve."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "modelLoaded",
+      "value": "false"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));",
+              "pm.collectionVariables.set('modelLoaded', String(pm.response.json().model_loaded));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Model info",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/model-info",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "model-info"
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('7 labels', () => pm.expect(body.labels).to.have.lengthOf(7));",
+              "pm.test('detectors listed', () => pm.expect(body.detectors).to.include.members(['auto', 'ast', 'regex']));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - string concatenation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"const mysql = require('mysql2/promise');\\n\\nasync function getUserById(req, res) {\\n  const userId = req.params.id;\\n  const sql = \\\"SELECT id, email FROM users WHERE id = \\\" + userId;\\n  const [rows] = await pool.query(sql);\\n  res.json(rows);\\n}\\n\",\n  \"filename\": \"users.js\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('one finding', () => pm.expect(body.summary.total_findings).to.eql(1));",
+              "pm.test('STRING_CONCAT', () => pm.expect(body.files[0].findings[0].pattern).to.eql('STRING_CONCAT'));",
+              "pm.test('confidence in [0,1]', () => { const c = body.files[0].findings[0].confidence; pm.expect(c).to.be.within(0, 1); });",
+              "pm.test('fast', () => pm.expect(pm.response.responseTime).to.be.below(3000));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - dynamic identifier (TS)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"import { Request, Response } from 'express';\\n\\ninterface Filter { field: string; value: string }\\n\\nexport class ReportService {\\n  constructor(private readonly db: any) {}\\n\\n  async byField(filter: Filter): Promise<any[]> {\\n    const sql = `SELECT * FROM reports WHERE ${filter.field} = '${filter.value}'`;\\n    return this.db.query(sql);\\n  }\\n\\n  async byId(id: number): Promise<any[]> {\\n    return this.db.query('SELECT * FROM reports WHERE id = $1', [id]);\\n  }\\n}\\n\\nexport const handler = async (req: Request, res: Response) => {\\n  const rows = await knex.raw(`SELECT * FROM reports WHERE owner = '${req.query.owner}'`);\\n  res.json(rows);\\n};\\n\",\n  \"filename\": \"report.service.ts\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const patterns = pm.response.json().files[0].findings.map(f => f.pattern).sort();",
+              "pm.test('patterns', () => pm.expect(patterns).to.eql(['DYNAMIC_IDENTIFIER', 'ORM_RAW_QUERY']));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - safe code has no findings",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"const SORTABLE = { name: 'name', price: 'price', created: 'created_at' };\\nconst TABLE = 'products';\\n\\nasync function getUser(req, res) {\\n  const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [req.params.id]);\\n  res.json(rows);\\n}\\n\\nasync function listProducts(req, res) {\\n  const column = SORTABLE[req.query.sort] || 'name';\\n  const limit = parseInt(req.query.limit, 10) || 20;\\n  const sql = 'SELECT * FROM ' + TABLE + ' ORDER BY ' + column + ' LIMIT ' + limit;\\n  const rows = await db.all(sql);\\n  res.json(rows);\\n}\\n\\nasync function findByEmail(email) {\\n  return prisma.$queryRaw`SELECT * FROM users WHERE email = ${email}`;\\n}\\n\\nasync function search(req, res) {\\n  const term = req.query.q;\\n  console.log(\\\"SELECT * FROM products WHERE name LIKE \\\" + term);\\n  const products = await knex('products').where('name', 'like', `%${term}%`).limit(10);\\n  res.json(products);\\n}\\n\\nasync function sortedUsers(req, res) {\\n  const dir = ['asc', 'desc'].includes(req.query.dir) ? req.query.dir : 'asc';\\n  const result = await client.query(`SELECT * FROM users ORDER BY created_at ${dir}`);\\n  res.json(result.rows);\\n}\\n\\nasync function updateEmail(req, res) {\\n  await sequelize.query('UPDATE users SET email = :email WHERE id = :id', {\\n    replacements: { email: req.body.email, id: req.user.id },\\n  });\\n  res.sendStatus(204);\\n}\\n\",\n  \"filename\": \"safe.js\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('no findings', () => pm.expect(pm.response.json().summary.total_findings).to.eql(0));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - with LLM explanations",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"async function loadAuditTrail(userId) {\\n  const [users] = await pool.execute('SELECT username FROM users WHERE id = ?', [userId]);\\n  const owner = users[0].username;\\n  const [logs] = await pool.query(\\\"SELECT * FROM audit_log WHERE owner = '\\\" + owner + \\\"'\\\");\\n  return logs;\\n}\\n\",\n  \"filename\": \"audit.js\",\n  \"explain\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const f = pm.response.json().files[0].findings[0];",
+              "pm.test('SECOND_ORDER', () => pm.expect(f.pattern).to.eql('SECOND_ORDER'));",
+              "pm.test('has explanation', () => { pm.expect(f.explanation).to.be.an('object'); pm.expect(f.explanation.fix_code).to.be.a('string').and.not.empty; });",
+              "pm.test('source groq|offline', () => pm.expect(['groq', 'offline']).to.include(f.explanation.source));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - regex baseline",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"app.post('/login', async (req, res) => {\\n  const { username, password } = req.body;\\n  const result = await client.query(\\n    `SELECT * FROM accounts WHERE username = '${username}' AND password = '${password}'`\\n  );\\n  res.json({ ok: result.rows.length > 0 });\\n});\\n\",\n  \"detector\": \"regex\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('regex detector used', () => pm.expect(pm.response.json().summary.detector).to.eql('regex'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan - codebert (409 until trained)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"app.post('/login', async (req, res) => {\\n  const { username, password } = req.body;\\n  const result = await client.query(\\n    `SELECT * FROM accounts WHERE username = '${username}' AND password = '${password}'`\\n  );\\n  res.json({ ok: result.rows.length > 0 });\\n});\\n\",\n  \"detector\": \"codebert\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.collectionVariables.get('modelLoaded') === 'true') {",
+              "  pm.test('200 with model', () => pm.response.to.have.status(200));",
+              "} else {",
+              "  pm.test('409 without model', () => pm.response.to.have.status(409));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scan files - multipart",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan/files",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan",
+            "files"
+          ]
+        },
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "files",
+              "type": "file",
+              "src": "backend/tests/fixtures/orm_raw_query.js"
+            },
+            {
+              "key": "detector",
+              "type": "text",
+              "value": "auto"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('200 OK', () => pm.response.to.have.status(200));",
+              "pm.test('ORM finding', () => pm.expect(body.files[0].findings[0].pattern).to.eql('ORM_RAW_QUERY'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Explain",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/explain",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "explain"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"router.get('/products', async (req, res) => {\\n  const sortColumn = req.query.sort || 'name';\\n  const rows = await db.all(`SELECT id, name, price FROM products ORDER BY ${sortColumn}`);\\n  res.send(rows);\\n});\\n\",\n  \"pattern\": \"DYNAMIC_IDENTIFIER\",\n  \"function\": \"products\",\n  \"confidence\": 0.92\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.test('fields', () => pm.expect(body).to.include.all.keys('summary', 'why_vulnerable', 'attack_example', 'fix_code', 'false_positive_likelihood', 'source'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validation error",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scan",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scan"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('422', () => pm.response.to.have.status(422));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
